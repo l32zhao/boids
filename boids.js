@@ -271,54 +271,39 @@ function initCohesionDistances() {
 
 // Genetic algorithm parameters
 const mutationRate = 0.1;
-const elitismCount = numBoids;
-const populationSize = numBoids;
 
-// Fitness function
+// Weight
+const cohesionWeight = 0.5;
+const alignmentWeight = 0.5;
+
+
+// Cal Fitness Scores
 function calculateFitness(boid) {
-  const cohesionWeight = 0.5;
-  const alignmentWeight = 0.5;
-
-  // const cohesionFitness = 0;
   const cohesionFitness = getCohesionFitness(boid);
-  // const alignmentFitness = 0;
   const alignmentFitness = getAlignmentFitness(boid);
 
   return cohesionWeight * cohesionFitness + alignmentWeight * alignmentFitness;
 }
 
-// Genetic algorithm functions
+// Mutation
 function mutate(boid) {
   if (Math.random() < mutationRate) {
     boid.cohesionDistance = minCohesionDistance + Math.random() * (maxCohesionDistance - minCohesionDistance);
   }
 }
 
-function crossover(parent1, parent2) {
-  const child = {
-    cohesionDistance: (parent1.cohesionDistance + parent2.cohesionDistance) / 2
-  };
-  mutate(child);
-  return child;
-}
-
+// Evolution
 function evolve() {
-  const newPopulation = [];
-
-  // Elitism: Carry over the fittest individuals
+  // 根据适应度分数对boid进行变异
   const sortedBoids = boids.slice().sort((a, b) => calculateFitness(b) - calculateFitness(a));
-  for (let i = 0; i < elitismCount; i++) {
-    newPopulation.push(sortedBoids[i]);
-  }
 
-  // Crossover and mutation
-  while (newPopulation.length < populationSize) {
-    const parent1 = boids[Math.floor(Math.random() * boids.length)];
-    const parent2 = boids[Math.floor(Math.random() * boids.length)];
-    newPopulation.push(crossover(parent1, parent2));
+  for (let boid of sortedBoids) {
+    const fitness = calculateFitness(boid);
+    const mutationProbability = 1 - fitness / bestFitness;
+    if (Math.random() < mutationProbability) {
+      mutate(boid);
+    }
   }
-
-  boids = newPopulation;
 
   const currentBestFitness = calculateFitness(sortedBoids[0]);
   if (currentBestFitness > bestFitness) {
@@ -330,7 +315,6 @@ function evolve() {
 
   console.log(`Generation: ${generationCount}, Best Fitness: ${bestFitness}`);
 }
-
 
 // Evaluation
 function logMetrics() {
