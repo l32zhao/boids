@@ -7,6 +7,9 @@ let wind = { x: 0, y: 0 }; // Wind velocity vector
 // Call createNewGeneration periodically (e.g., every 100 frames)
 let frameCount = 0;
 
+let bestFitness = -Infinity;
+let generationCount = 0;
+
 const numBoids = 100;
 const visualRange = 75;
 
@@ -269,23 +272,19 @@ function initCohesionDistances() {
 // Genetic algorithm parameters
 const mutationRate = 0.1;
 const elitismCount = numBoids;
-const populationSize = 2 * elitismCount;
+const populationSize = numBoids;
 
 // Fitness function
 function calculateFitness(boid) {
-  let cohesionFitness = 0;
-  let separationFitness = 0;
+  const cohesionWeight = 0.5;
+  const alignmentWeight = 0.5;
 
-  for (let otherBoid of boids) {
-    const dist = distance(boid, otherBoid);
-    if (dist < boid.cohesionDistance) {
-      cohesionFitness += 1 / dist;
-    } else if (dist < visualRange) {
-      separationFitness += 1 / dist;
-    }
-  }
+  // const cohesionFitness = 0;
+  const cohesionFitness = getCohesionFitness(boid);
+  // const alignmentFitness = 0;
+  const alignmentFitness = getAlignmentFitness(boid);
 
-  return cohesionFitness + separationFitness;
+  return cohesionWeight * cohesionFitness + alignmentWeight * alignmentFitness;
 }
 
 // Genetic algorithm functions
@@ -320,6 +319,16 @@ function evolve() {
   }
 
   boids = newPopulation;
+
+  const currentBestFitness = calculateFitness(sortedBoids[0]);
+  if (currentBestFitness > bestFitness) {
+    bestFitness = currentBestFitness;
+    generationCount = 0;
+  } else {
+    generationCount++;
+  }
+
+  console.log(`Generation: ${generationCount}, Best Fitness: ${bestFitness}`);
 }
 
 
@@ -330,6 +339,72 @@ function logMetrics() {
 
   console.log(`Average flock cohesion: ${averageFlockCohesion}`);
   console.log(`Navigation time: ${navigationTime === null ? 'N/A' : `${navigationTime / 1000} seconds`}`);
+}
+
+
+function calculateAlignmentAngleDeviation() {
+  let totalDeviation = 0;
+  let numBoids = 0;
+
+  for (let boid of boids) {
+    const neighbors = getNeighbors(boid);
+    if (neighbors.length > 0) {
+      let avgHeading = 0;
+      for (let neighbor of neighbors) {
+        avgHeading += Math.atan2(neighbor.dy, neighbor.dx);
+      }
+      avgHeading /= neighbors.length;
+
+      const boidHeading = Math.atan2(boid.dy, boid.dx);
+      const deviation = Math.abs(boidHeading - avgHeading);
+      totalDeviation += deviation;
+      numBoids++;
+    }
+  }
+
+  if (numBoids === 0) {
+    return 0;
+  }
+
+  return totalDeviation / numBoids;
+}
+
+function getNeighbors(boid) {
+  const neighbors = [];
+  for (let otherBoid of boids) {
+    if (otherBoid !== boid && distance(boid, otherBoid) < visualRange) {
+      neighbors.push(otherBoid);
+    }
+  }
+  return neighbors;
+}
+
+function getCohesionFitness(boid) {
+  let cohesionFitness = 0;
+  for (let otherBoid of boids) {
+    const dist = distance(boid, otherBoid);
+    if (dist < boid.cohesionDistance && dist != 0) {
+      cohesionFitness += 1 / dist;
+    }
+  }
+  return cohesionFitness;
+}
+
+function getAlignmentFitness(boid) {
+  const neighbors = getNeighbors(boid);
+  if (neighbors.length === 0) {
+    return 1; // No neighbors, perfect alignment
+  }
+
+  let avgHeading = 0;
+  for (let neighbor of neighbors) {
+    avgHeading += Math.atan2(neighbor.dy, neighbor.dx);
+  }
+  avgHeading /= neighbors.length;
+
+  const boidHeading = Math.atan2(boid.dy, boid.dx);
+  const deviation = Math.abs(boidHeading - avgHeading);
+  return 1 - deviation / Math.PI; // Normalize to range [0, 1]
 }
 
 function calculateAverageFlockCohesion() {
