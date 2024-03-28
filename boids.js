@@ -430,3 +430,22 @@ function getNavigationTime() {
   }
   return performance.now() - navigationStartTime;
 }
+
+// Resources Monitoring
+let startTime = null;
+let totalTime = 0;
+
+function startTimer() {
+  startTime = performance.now();
+}
+
+function stopTimer() {
+  const endTime = performance.now();
+  totalTime += endTime - startTime;
+  startTime = null;
+}
+
+function logResourceUtilization() {
+  const memoryUsage = process.memoryUsage().heapUsed / (1024 * 1024);
+  console.log(`CPU Time: ${totalTime / 1000} seconds, Memory Usage: ${memoryUsage.toFixed(2)} MB`);
+}
