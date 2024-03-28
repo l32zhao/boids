@@ -1,6 +1,11 @@
 // Size of canvas. These get updated to fill the whole browser.
 let width = 150;
 let height = 150;
+let wind = { x: 0, y: 0 }; // Wind velocity vector
+// let wind = { x: 0.5, y: 0.3 }; // Wind velocity vector
+
+// Call createNewGeneration periodically (e.g., every 100 frames)
+let frameCount = 0;
 
 const numBoids = 100;
 const visualRange = 75;
@@ -15,8 +20,10 @@ function initBoids() {
       dx: Math.random() * 10 - 5,
       dy: Math.random() * 10 - 5,
       history: [],
+      cohesionDistance: Math.random() * 100 + 50, // Random cohesion distance between 50 and 150
     };
   }
+  initCohesionDistances();
 }
 
 function distance(boid1, boid2) {
@@ -76,7 +83,7 @@ function flyTowardsCenter(boid) {
   let numNeighbors = 0;
 
   for (let otherBoid of boids) {
-    if (distance(boid, otherBoid) < visualRange) {
+    if (distance(boid, otherBoid) < boid.cohesionDistance) {
       centerX += otherBoid.x;
       centerY += otherBoid.y;
       numNeighbors += 1;
@@ -121,7 +128,7 @@ function matchVelocity(boid) {
   let numNeighbors = 0;
 
   for (let otherBoid of boids) {
-    if (distance(boid, otherBoid) < visualRange) {
+    if (distance(boid, otherBoid) < boid.cohesionDistance) {
       avgDX += otherBoid.dx;
       avgDY += otherBoid.dy;
       numNeighbors += 1;
@@ -165,19 +172,29 @@ function drawBoid(ctx, boid) {
   ctx.fill();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  if (DRAW_TRAIL) {
-    ctx.strokeStyle = "#558cf466";
-    ctx.beginPath();
-    ctx.moveTo(boid.history[0][0], boid.history[0][1]);
-    for (const point of boid.history) {
-      ctx.lineTo(point[0], point[1]);
-    }
-    ctx.stroke();
-  }
+  // if (DRAW_TRAIL) {
+  //   ctx.strokeStyle = "#558cf466";
+  //   ctx.beginPath();
+  //   ctx.moveTo(boid.history[0][0], boid.history[0][1]);
+  //   for (const point of boid.history) {
+  //     ctx.lineTo(point[0], point[1]);
+  //   }
+  //   ctx.stroke();
+  // }
+}
+
+// Apply wind force to each boid's velocity
+function applyWindForce(boid) {
+  boid.dx += wind.x;
+  boid.dy += wind.y;
 }
 
 // Main animation loop
 function animationLoop() {
+  // Calculate the center of mass
+  let centerX = 0;
+  let centerY = 0;
+
   // Update each boid
   for (let boid of boids) {
     // Update the velocities according to each rule
@@ -187,11 +204,17 @@ function animationLoop() {
     limitSpeed(boid);
     keepWithinBounds(boid);
 
+    // Apply wind force
+    applyWindForce(boid);
+
     // Update the position based on the current velocity
     boid.x += boid.dx;
     boid.y += boid.dy;
-    boid.history.push([boid.x, boid.y])
-    boid.history = boid.history.slice(-50);
+    // boid.history.push([boid.x, boid.y]);
+    // boid.history = boid.history.slice(-50);
+
+    centerX += boid.x;
+    centerY += boid.y;
   }
 
   // Clear the canvas and redraw all the boids in their current positions
@@ -201,8 +224,23 @@ function animationLoop() {
     drawBoid(ctx, boid);
   }
 
+  // Check if the center of mass has reached the target
+  const centerDistance = distance({ x: centerX, y: centerY }, { x: targetX, y: targetY });
+  // console.log(centerDistance);
+  if (centerDistance < 60000) {
+    resetNavigationTime();
+  }
+
   // Schedule the next frame
   window.requestAnimationFrame(animationLoop);
+
+  // Genetic Evolution
+  frameCount++;
+  if (frameCount % 100 === 0) {
+    logMetrics();
+    evolve();
+  }
+  
 }
 
 window.onload = () => {
@@ -216,3 +254,120 @@ window.onload = () => {
   // Schedule the main animation loop
   window.requestAnimationFrame(animationLoop);
 };
+
+// Cohesion distance range
+const minCohesionDistance = 50;
+const maxCohesionDistance = 100;
+
+// Assign random cohesion distances to each boid
+function initCohesionDistances() {
+  for (let boid of boids) {
+    boid.cohesionDistance = minCohesionDistance + Math.random() * (maxCohesionDistance - minCohesionDistance);
+  }
+}
+
+// Genetic algorithm parameters
+const mutationRate = 0.1;
+const elitismCount = numBoids;
+const populationSize = 2 * elitismCount;
+
+// Fitness function
+function calculateFitness(boid) {
+  let cohesionFitness = 0;
+  let separationFitness = 0;
+
+  for (let otherBoid of boids) {
+    const dist = distance(boid, otherBoid);
+    if (dist < boid.cohesionDistance) {
+      cohesionFitness += 1 / dist;
+    } else if (dist < visualRange) {
+      separationFitness += 1 / dist;
+    }
+  }
+
+  return cohesionFitness + separationFitness;
+}
+
+// Genetic algorithm functions
+function mutate(boid) {
+  if (Math.random() < mutationRate) {
+    boid.cohesionDistance = minCohesionDistance + Math.random() * (maxCohesionDistance - minCohesionDistance);
+  }
+}
+
+function crossover(parent1, parent2) {
+  const child = {
+    cohesionDistance: (parent1.cohesionDistance + parent2.cohesionDistance) / 2
+  };
+  mutate(child);
+  return child;
+}
+
+function evolve() {
+  const newPopulation = [];
+
+  // Elitism: Carry over the fittest individuals
+  const sortedBoids = boids.slice().sort((a, b) => calculateFitness(b) - calculateFitness(a));
+  for (let i = 0; i < elitismCount; i++) {
+    newPopulation.push(sortedBoids[i]);
+  }
+
+  // Crossover and mutation
+  while (newPopulation.length < populationSize) {
+    const parent1 = boids[Math.floor(Math.random() * boids.length)];
+    const parent2 = boids[Math.floor(Math.random() * boids.length)];
+    newPopulation.push(crossover(parent1, parent2));
+  }
+
+  boids = newPopulation;
+}
+
+
+// Evaluation
+function logMetrics() {
+  const averageFlockCohesion = calculateAverageFlockCohesion();
+  const navigationTime = getNavigationTime();
+
+  console.log(`Average flock cohesion: ${averageFlockCohesion}`);
+  console.log(`Navigation time: ${navigationTime === null ? 'N/A' : `${navigationTime / 1000} seconds`}`);
+}
+
+function calculateAverageFlockCohesion() {
+  let totalCohesion = 0;
+  let numBoidPairs = 0;
+
+  for (let i = 0; i < boids.length; i++) {
+    for (let j = i + 1; j < boids.length; j++) {
+      const dist = distance(boids[i], boids[j]);
+      if (dist < visualRange) {
+        totalCohesion += 1 / dist;
+        numBoidPairs++;
+      }
+    }
+  }
+
+  if (numBoidPairs === 0) {
+    return 0;
+  }
+
+  return totalCohesion / numBoidPairs;
+}
+
+// Target location for navigation
+const targetX = width / 2;
+const targetY = height / 2;
+
+// Time when navigation started
+let navigationStartTime = null;
+
+function resetNavigationTime() {
+  // console.log(performance.now());
+  navigationStartTime = performance.now();
+}
+
+function getNavigationTime() {
+  if (navigationStartTime === null) {
+    return null;
+  }
+  return performance.now() - navigationStartTime;
+}
