@@ -1,8 +1,17 @@
 // Size of canvas. These get updated to fill the whole browser.
 let width = 150;
 let height = 150;
-let wind = { x: 0, y: 0 }; // Wind velocity vector
+let wind = { x: 0.05, y: 0.02 }; // Wind velocity vector
+
 // let wind = { x: 0.5, y: 0.3 }; // Wind velocity vector
+let obstacles = []; // Array to hold obstacle objects
+const numObstacles = 15;
+
+let predator = null; // Object to hold predator information
+
+const geneticFlag = true;
+const obstacleFlag = true;
+const varWindFlag = true;
 
 // Call createNewGeneration periodically (e.g., every 100 frames)
 let frameCount = 0;
@@ -12,6 +21,10 @@ let generationCount = 0;
 
 const numBoids = 100;
 const visualRange = 75;
+
+// Cohesion distance range
+const minCohesionDistance = 50;
+const maxCohesionDistance = 100;
 
 var boids = [];
 
@@ -23,11 +36,124 @@ function initBoids() {
       dx: Math.random() * 10 - 5,
       dy: Math.random() * 10 - 5,
       history: [],
-      cohesionDistance: Math.random() * 100 + 50, // Random cohesion distance between 50 and 150
+      cohesionDistance: 0, // Random cohesion distance between 50 and 150
     };
   }
   initCohesionDistances();
 }
+
+
+// Wind
+function calculateWindMagnitude() {
+  return Math.sqrt(wind.x * wind.x + wind.y * wind.y);
+}
+
+function updateWindPattern() {
+  const windMagnitude = calculateWindMagnitude();
+  const newAngleRadians = Math.random() * Math.PI * 2; // Wind direction in radians
+  wind.x = windMagnitude * Math.cos(newAngleRadians);
+  wind.y = windMagnitude * Math.sin(newAngleRadians);
+}
+
+
+// Obstacles
+function initObstacles(numObstacles) {
+  for (let i = 0; i < numObstacles; i++) {
+    obstacles.push({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      radius: Math.random() * 25 + 10, // Random radius between 10 and 35
+    });
+  }
+}
+
+function avoidObstacles(boid) {
+  const avoidFactor = 0.05; // Adjust velocity by this %
+  obstacles.forEach(obstacle => {
+    const dist = distance(boid, obstacle);
+    if (dist < obstacle.radius + 30) { // Check if too close to the obstacle
+      boid.dx += (boid.x - obstacle.x) * avoidFactor;
+      boid.dy += (boid.y - obstacle.y) * avoidFactor;
+    }
+  });
+
+  if (predator) {
+    const dist = distance(boid, predator);
+    if (dist < predator.radius + 50) { // Larger avoidance radius for predator
+      boid.dx += (boid.x - predator.x) * avoidFactor * 2; // Stronger avoidance
+      boid.dy += (boid.y - predator.y) * avoidFactor * 2;
+    }
+  }
+}
+
+// Predator
+function updatePredatorPosition() {
+  if (!predator) return;
+
+  let targetX = 0;
+  let targetY = 0;
+  let numBoids = 0;
+
+  // Option 1: Predator chases the nearest boid
+  let nearestBoid = null;
+  let nearestDistance = Infinity;
+  for (let boid of boids) {
+    let dist = distance(predator, boid);
+    if (dist < nearestDistance) {
+      nearestDistance = dist;
+      nearestBoid = boid;
+    }
+  }
+  if (nearestBoid) {
+    targetX = nearestBoid.x;
+    targetY = nearestBoid.y;
+  }
+
+  // Option 2: Predator chases the center of mass of all boids
+  // Uncomment below code to use this option instead.
+  /*
+  boids.forEach(boid => {
+    targetX += boid.x;
+    targetY += boid.y;
+    numBoids++;
+  });
+  if (numBoids > 0) {
+    targetX /= numBoids;
+    targetY /= numBoids;
+  }
+  */
+
+  // Calculate direction towards the target and update predator's position
+  let dx = targetX - predator.x;
+  let dy = targetY - predator.y;
+  let magnitude = Math.sqrt(dx * dx + dy * dy);
+  if (magnitude > 0) {
+    dx /= magnitude;
+    dy /= magnitude;
+  }
+
+  // Update predator's position; adjust speed as necessary
+  const predatorSpeed = 2; // Adjust predator speed here
+  predator.x += dx * predatorSpeed;
+  predator.y += dy * predatorSpeed;
+}
+
+function drawEnvironment(ctx) {
+  obstacles.forEach(obstacle => {
+    ctx.fillStyle = 'yellow';
+    ctx.beginPath();
+    ctx.arc(obstacle.x, obstacle.y, obstacle.radius, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  if (predator) {
+    ctx.fillStyle = 'red';
+    ctx.beginPath();
+    ctx.arc(predator.x, predator.y, predator.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 
 function distance(boid1, boid2) {
   return Math.sqrt(
@@ -198,11 +324,15 @@ function animationLoop() {
   let centerX = 0;
   let centerY = 0;
 
+  // Update predator position
+  updatePredatorPosition();
+
   // Update each boid
   for (let boid of boids) {
     // Update the velocities according to each rule
     flyTowardsCenter(boid);
     avoidOthers(boid);
+    avoidObstacles(boid);
     matchVelocity(boid);
     limitSpeed(boid);
     keepWithinBounds(boid);
@@ -226,6 +356,7 @@ function animationLoop() {
   for (let boid of boids) {
     drawBoid(ctx, boid);
   }
+  drawEnvironment(ctx);
 
   // Check if the center of mass has reached the target
   const centerDistance = distance({ x: centerX, y: centerY }, { x: targetX, y: targetY });
@@ -241,7 +372,12 @@ function animationLoop() {
   frameCount++;
   if (frameCount % 100 === 0) {
     logMetrics();
-    evolve();
+    if (geneticFlag) evolve();
+  }
+
+  // Update wind pattern every 500 frames
+  if (frameCount % 500 === 0 && varWindFlag) {
+    updateWindPattern();
   }
   
 }
@@ -249,18 +385,23 @@ function animationLoop() {
 window.onload = () => {
   // Make sure the canvas always fills the whole window
   window.addEventListener("resize", sizeCanvas, false);
+  const canvas = document.getElementById("boids");
+  canvas.addEventListener("click", function(event) {
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    predator = { x, y, radius: 20 }; // Example predator with a fixed size
+  });
   sizeCanvas();
 
   // Randomly distribute the boids to start
   initBoids();
-
+  if (obstacleFlag) initObstacles(numObstacles);
   // Schedule the main animation loop
   window.requestAnimationFrame(animationLoop);
 };
 
-// Cohesion distance range
-const minCohesionDistance = 50;
-const maxCohesionDistance = 100;
+
 
 // Assign random cohesion distances to each boid
 function initCohesionDistances() {
@@ -294,7 +435,7 @@ function mutate(boid) {
 
 // Evolution
 function evolve() {
-  // 根据适应度分数对boid进行变异
+  // mutate depending on mutationProbability
   const sortedBoids = boids.slice().sort((a, b) => calculateFitness(b) - calculateFitness(a));
 
   for (let boid of sortedBoids) {
@@ -320,9 +461,11 @@ function evolve() {
 function logMetrics() {
   const averageFlockCohesion = calculateAverageFlockCohesion();
   const navigationTime = getNavigationTime();
+  const avgAlignmentAngleDev = calculateAlignmentAngleDeviation()
 
   console.log(`Average flock cohesion: ${averageFlockCohesion}`);
-  console.log(`Navigation time: ${navigationTime === null ? 'N/A' : `${navigationTime / 1000} seconds`}`);
+  console.log(`Average Alignment Angle Dev: ${avgAlignmentAngleDev}`);
+  // console.log(`Navigation time: ${navigationTime === null ? 'N/A' : `${navigationTime / 1000} seconds`}`);
 }
 
 
@@ -356,7 +499,7 @@ function calculateAlignmentAngleDeviation() {
 function getNeighbors(boid) {
   const neighbors = [];
   for (let otherBoid of boids) {
-    if (otherBoid !== boid && distance(boid, otherBoid) < visualRange) {
+    if (otherBoid !== boid && distance(boid, otherBoid) < maxCohesionDistance) {
       neighbors.push(otherBoid);
     }
   }
@@ -398,8 +541,8 @@ function calculateAverageFlockCohesion() {
   for (let i = 0; i < boids.length; i++) {
     for (let j = i + 1; j < boids.length; j++) {
       const dist = distance(boids[i], boids[j]);
-      if (dist < visualRange) {
-        totalCohesion += 1 / dist;
+      if (dist < maxCohesionDistance) {
+        if (dist != 0) totalCohesion += 1 / dist;
         numBoidPairs++;
       }
     }
