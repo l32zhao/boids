@@ -1,17 +1,19 @@
 // Size of canvas. These get updated to fill the whole browser.
 let width = 150;
 let height = 150;
-let wind = { x: 0.05, y: 0.02 }; // Wind velocity vector
+let wind = { x: 0, y: 0 }; // Wind velocity vector
+// let wind = { x: 0.05, y: 0.02 }; // Wind velocity vector
 
 // let wind = { x: 0.5, y: 0.3 }; // Wind velocity vector
 let obstacles = []; // Array to hold obstacle objects
-const numObstacles = 15;
+const numObstacles = 50;
+const unitFactor = 0.001;
 
 let predator = null; // Object to hold predator information
 
 const geneticFlag = true;
 const obstacleFlag = true;
-const varWindFlag = true;
+const varWindFlag = false;
 
 // Call createNewGeneration periodically (e.g., every 100 frames)
 let frameCount = 0;
@@ -23,20 +25,27 @@ const numBoids = 100;
 const visualRange = 75;
 
 // Cohesion distance range
+// const minCohesionDistance = 25;
+// const maxCohesionDistance = 75;
 const minCohesionDistance = 50;
 const maxCohesionDistance = 100;
+// const minCohesionDistance = 75;
+// const maxCohesionDistance = 125;
 
 var boids = [];
 
 function initBoids() {
   for (var i = 0; i < numBoids; i += 1) {
+    const dx = Math.random() * 10 - 5;
+    const dy = Math.random() * 10 - 5;
     boids[boids.length] = {
       x: Math.random() * width,
       y: Math.random() * height,
-      dx: Math.random() * 10 - 5,
-      dy: Math.random() * 10 - 5,
+      dx: dx,
+      dy: dy,
       history: [],
       cohesionDistance: 0, // Random cohesion distance between 50 and 150
+      alignmentAngle: Math.atan2(dy, dx), // Initialize alignment angle
     };
   }
   initCohesionDistances();
@@ -230,7 +239,7 @@ function flyTowardsCenter(boid) {
 
 // Move away from other boids that are too close to avoid colliding
 function avoidOthers(boid) {
-  const minDistance = 20; // The distance to stay away from other boids
+  const minDistance = 25; // The distance to stay away from other boids
   const avoidFactor = 0.05; // Adjust velocity by this %
   let moveX = 0;
   let moveY = 0;
@@ -370,7 +379,7 @@ function animationLoop() {
 
   // Genetic Evolution
   frameCount++;
-  if (frameCount % 100 === 0) {
+  if (frameCount % 50 === 0) {
     logMetrics();
     if (geneticFlag) evolve();
   }
@@ -411,7 +420,7 @@ function initCohesionDistances() {
 }
 
 // Genetic algorithm parameters
-const mutationRate = 0.1;
+const mutationRate = 0.3;
 
 // Weight
 const cohesionWeight = 0.5;
@@ -430,6 +439,15 @@ function calculateFitness(boid) {
 function mutate(boid) {
   if (Math.random() < mutationRate) {
     boid.cohesionDistance = minCohesionDistance + Math.random() * (maxCohesionDistance - minCohesionDistance);
+  }
+
+  // Mutate alignment angle
+  if (Math.random() < mutationRate) {
+    const angleMutation = (Math.random() - 0.5) * 2 * Math.PI; // Random angle between -π and π
+    boid.alignmentAngle += angleMutation;
+    // Ensure the alignment angle remains within valid range
+    boid.dx = Math.cos(boid.alignmentAngle);
+    boid.dy = Math.sin(boid.alignmentAngle);
   }
 }
 
@@ -462,8 +480,8 @@ function logMetrics() {
   const averageFlockCohesion = calculateAverageFlockCohesion();
   const navigationTime = getNavigationTime();
   const avgAlignmentAngleDev = calculateAlignmentAngleDeviation()
-
-  console.log(`Average flock cohesion: ${averageFlockCohesion}`);
+  console.clear();
+  console.log(`Average flock cohesion: ${averageFlockCohesion * unitFactor}`);
   console.log(`Average Alignment Angle Dev: ${avgAlignmentAngleDev}`);
   // console.log(`Navigation time: ${navigationTime === null ? 'N/A' : `${navigationTime / 1000} seconds`}`);
 }
@@ -541,9 +559,11 @@ function calculateAverageFlockCohesion() {
   for (let i = 0; i < boids.length; i++) {
     for (let j = i + 1; j < boids.length; j++) {
       const dist = distance(boids[i], boids[j]);
-      if (dist < maxCohesionDistance) {
-        if (dist != 0) totalCohesion += 1 / dist;
-        numBoidPairs++;
+      if (dist) {
+        if (dist != 0) {
+          totalCohesion += dist;
+          numBoidPairs++;
+        }
       }
     }
   }
